@@ -24,6 +24,8 @@ dependencies = [
  "async-trait",
  "domain",
  "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

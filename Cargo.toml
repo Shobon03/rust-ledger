@@ -3,6 +3,13 @@ name = "rust-ledger"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = [
+    "domain",
+    "application",
+    "infrastructure",
+]
+
 [dependencies]
 domain = { path = "domain" }
 application = { path = "application" }

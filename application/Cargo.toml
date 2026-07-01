@@ -7,3 +7,7 @@ edition = "2024"
 domain = { path = "../domain" }
 async-trait = "0.1.89"
 thiserror = "2.0.18"
+uuid = { version = "1.23.4", features = ["v7"] }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros", "rt"] }
