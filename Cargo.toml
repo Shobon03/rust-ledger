@@ -7,13 +7,14 @@ edition = "2024"
 members = [
     "domain",
     "application",
-    "infrastructure",
+    "infrastructure", "presentation",
 ]
 
 [dependencies]
 domain = { path = "domain" }
 application = { path = "application" }
 infrastructure = { path = "infrastructure" }
+presentation = { path = "presentation" }
 
 serde = "1.0.228"
 serde_json = "1.0.150"

@@ -43,9 +43,11 @@ impl TransferUseCase {
     };
 
     let transaction = Transaction::new(req.idempotency_key, vec![debit, credit])?;
-    self.repository.save_transaction(&transaction).await?;
-
-    Ok(transaction.id)
+    match self.repository.save_transaction(&transaction).await {
+      Ok(_) => Ok(transaction.id),
+      Err(AppError::IdempotencyConflict(existing_id)) => Ok(existing_id),
+      Err(e) => Err(e),
+    }
   }
 }
 

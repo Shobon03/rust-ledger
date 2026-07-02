@@ -1,7 +1,11 @@
 use application::{error::AppError, ports::repository::LedgerRepository};
 use async_trait::async_trait;
 use domain::entities::transaction::Transaction;
-use std::{fs::OpenOptions, io::Write, sync::Mutex};
+use std::{
+  fs::{File, OpenOptions},
+  io::{BufRead, BufReader, Write},
+  sync::Mutex,
+};
 
 pub struct JsonLedgerRepo {
   file_path: String,
@@ -20,10 +24,24 @@ impl JsonLedgerRepo {
 #[async_trait]
 impl LedgerRepository for JsonLedgerRepo {
   async fn save_transaction(&self, transaction: &Transaction) -> Result<(), AppError> {
+    let _guard = self.lock.lock().unwrap();
+
+    if let Ok(file) = File::open(&self.file_path) {
+      let reader = BufReader::new(file);
+
+      for line_result in reader.lines() {
+        if let Ok(line_str) = line_result {
+          if let Ok(saved_tx) = serde_json::from_str::<Transaction>(&line_str) {
+            if saved_tx.idempotency_key == transaction.idempotency_key {
+              return Err(AppError::IdempotencyConflict(saved_tx.id));
+            }
+          }
+        }
+      }
+    }
+
     let serialized = serde_json::to_string(transaction)
       .map_err(|e| AppError::Infrastructure(format!("Failed to serialize: {}", e)))?;
-
-    let _guard = self.lock.lock().unwrap();
 
     let mut file = OpenOptions::new()
       .create(true)
