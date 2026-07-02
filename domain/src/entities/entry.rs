@@ -1,7 +1,7 @@
 use crate::value_objects::account::AccountId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntryType {
   Debit,
   Credit,
