@@ -40,3 +40,37 @@ impl GetBalanceQuery {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use uuid::Uuid;
+
+  struct MockBalanceQueryRepo {
+    pub balance: i64,
+  }
+
+  #[async_trait::async_trait]
+  impl BalanceQueryRepository for MockBalanceQueryRepo {
+    async fn get_balance(&self, account_id: &AccountId) -> Result<AccountBalance, AppError> {
+      Ok(AccountBalance {
+        account_id: *account_id,
+        balance: self.balance,
+      })
+    }
+  }
+
+  #[tokio::test]
+  async fn get_balance_returns_correct_value() {
+    let repo = Arc::new(MockBalanceQueryRepo { balance: 1250 });
+    let query = GetBalanceQuery::new(repo);
+
+    let account_id = AccountId(Uuid::now_v7());
+    let result = query.execute(account_id).await;
+
+    assert!(result.is_ok());
+    let balance = result.unwrap();
+    assert_eq!(balance.account_id, account_id);
+    assert_eq!(balance.balance, 1250);
+  }
+}

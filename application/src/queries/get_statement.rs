@@ -40,3 +40,56 @@ impl GetStatementQuery {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use domain::{entities::entry::{EntryLine, EntryType}, value_objects::idempotency::IdempotencyKeyId};
+  use uuid::Uuid;
+
+  struct MockStatementQueryRepo {
+    pub transactions: Vec<Transaction>,
+  }
+
+  #[async_trait::async_trait]
+  impl StatementQueryRepository for MockStatementQueryRepo {
+    async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+      Ok(AccountStatement {
+        account_id: *account_id,
+        transactions: self.transactions.clone(),
+      })
+    }
+  }
+
+  #[tokio::test]
+  async fn get_statement_returns_transactions() {
+    let account_id = AccountId(Uuid::now_v7());
+    let other_account = AccountId(Uuid::now_v7());
+    let id_key = IdempotencyKeyId(Uuid::now_v7());
+
+    let debit = EntryLine {
+      account_id,
+      amount: 100,
+      operation: EntryType::Debit,
+    };
+    let credit = EntryLine {
+      account_id: other_account,
+      amount: 100,
+      operation: EntryType::Credit,
+    };
+    let transaction = Transaction::new(id_key, vec![debit, credit]).unwrap();
+
+    let repo = Arc::new(MockStatementQueryRepo {
+      transactions: vec![transaction.clone()],
+    });
+    let query = GetStatementQuery::new(repo);
+
+    let result = query.execute(account_id).await;
+
+    assert!(result.is_ok());
+    let statement = result.unwrap();
+    assert_eq!(statement.account_id, account_id);
+    assert_eq!(statement.transactions.len(), 1);
+    assert_eq!(statement.transactions[0].id.0, transaction.id.0);
+  }
+}
