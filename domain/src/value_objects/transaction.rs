@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TransactionId(pub Uuid);
 
 impl Display for TransactionId {

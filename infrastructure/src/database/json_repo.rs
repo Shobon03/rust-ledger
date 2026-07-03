@@ -1,3 +1,4 @@
+use crate::database::utils::check_and_create_dir;
 use application::{
   error::AppError,
   ports::repository::LedgerRepository,
@@ -6,13 +7,12 @@ use application::{
 use async_trait::async_trait;
 use domain::{
   entities::{entry::EntryType, transaction::Transaction},
-  value_objects::account::{self, AccountId},
+  value_objects::{account::AccountId, transaction::TransactionId},
 };
 use std::{
   collections::HashMap,
   fs::{File, OpenOptions},
   io::{BufRead, BufReader, Write},
-  path::Path,
   sync::{Mutex, RwLock},
 };
 
@@ -24,9 +24,7 @@ pub struct JsonLedgerRepo {
 
 impl JsonLedgerRepo {
   pub fn new(file_path: &str) -> Self {
-    if let Some(parent) = Path::new(file_path).parent() {
-      let _ = std::fs::create_dir_all(parent);
-    }
+    check_and_create_dir(&file_path);
 
     let mut cache_balances = HashMap::new();
 
@@ -58,7 +56,7 @@ impl JsonLedgerRepo {
 
 #[async_trait]
 impl LedgerRepository for JsonLedgerRepo {
-  async fn save_transaction(&self, transaction: &Transaction) -> Result<(), AppError> {
+  async fn save_transaction(&self, transaction: &Transaction) -> Result<TransactionId, AppError> {
     let _guard = self.write_lock.lock().unwrap();
 
     if let Ok(file) = File::open(&self.file_path) {
@@ -98,7 +96,7 @@ impl LedgerRepository for JsonLedgerRepo {
       }
     }
 
-    Ok(())
+    Ok(transaction.id)
   }
 }
 

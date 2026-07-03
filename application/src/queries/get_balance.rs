@@ -13,7 +13,7 @@ pub trait BalanceQueryRepository: Send + Sync {
 }
 
 pub struct GetBalanceQuery {
-  repository: Arc<dyn BalanceQueryRepository>,
+  repository: Arc<dyn BalanceQueryRepository + Send + Sync>,
 }
 
 impl GetBalanceQuery {

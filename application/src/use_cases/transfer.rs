@@ -17,7 +17,7 @@ pub struct TransferRequest {
 }
 
 pub struct TransferUseCase {
-  repository: Arc<dyn LedgerRepository>,
+  repository: Arc<dyn LedgerRepository + Send + Sync>,
 }
 
 impl TransferUseCase {
@@ -44,7 +44,7 @@ impl TransferUseCase {
 
     let transaction = Transaction::new(req.idempotency_key, vec![debit, credit])?;
     match self.repository.save_transaction(&transaction).await {
-      Ok(_) => Ok(transaction.id),
+      Ok(tansaction_id) => Ok(tansaction_id),
       Err(AppError::IdempotencyConflict(existing_id)) => Ok(existing_id),
       Err(e) => Err(e),
     }
@@ -71,11 +71,11 @@ mod tests {
 
   #[async_trait::async_trait]
   impl LedgerRepository for MockLedgerRepo {
-    async fn save_transaction(&self, transaction: &Transaction) -> Result<(), AppError> {
+    async fn save_transaction(&self, transaction: &Transaction) -> Result<TransactionId, AppError> {
       let mut lock = self.saved_transactions.lock().unwrap();
       lock.push(transaction.clone());
 
-      Ok(())
+      Ok(transaction.id)
     }
   }
 
