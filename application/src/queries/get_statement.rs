@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use domain::{entities::transaction::Transaction, value_objects::account::AccountId};
 use std::sync::Arc;
+use tracing::{error, info, instrument};
 
 pub struct AccountStatement {
   pub account_id: AccountId,
@@ -21,7 +22,21 @@ impl GetStatementQuery {
     Self { repository }
   }
 
+  #[instrument(
+    skip(self),
+    fields(account_id = %account_id)
+  )]
   pub async fn execute(&self, account_id: AccountId) -> Result<AccountStatement, AppError> {
-    self.repository.get_statement(&account_id).await
+    info!("Querying account statement");
+    match self.repository.get_statement(&account_id).await {
+      Ok(statement) => {
+        info!(transactions_count = statement.transactions.len(), "Statement query succeeded");
+        Ok(statement)
+      }
+      Err(e) => {
+        error!(error = %e, "Statement query failed");
+        Err(e)
+      }
+    }
   }
 }

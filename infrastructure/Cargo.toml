@@ -12,3 +12,4 @@ rocksdb = "0.24.0"
 uuid = { version = "1.23.4", features = ["v7"] }
 dashmap = "6.2.1"
 tokio = { version = "1.52.3", features = ["sync"] }
+tracing = "0.1.44"

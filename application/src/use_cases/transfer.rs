@@ -8,6 +8,7 @@ use domain::{
   value_objects::{account::AccountId, idempotency::IdempotencyKeyId, transaction::TransactionId},
 };
 use std::sync::Arc;
+use tracing::{error, info, instrument, warn};
 
 pub struct TransferRequest {
   pub idempotency_key: IdempotencyKeyId,
@@ -25,8 +26,19 @@ impl TransferUseCase {
     Self { repository }
   }
 
+  #[instrument(
+    skip(self, req),
+    fields(
+      from = %req.from_account,
+      to= %req.to_account,
+      amount = req.amount
+    )
+  )]
   pub async fn execute(&self, req: TransferRequest) -> Result<TransactionId, AppError> {
+    info!("Processing transfer request");
+
     if req.amount == 0 {
+      warn!("Transfer rejected: amount must be greater than zero");
       return Err(AppError::Domain(DomainError::ZeroAmount));
     }
 
@@ -44,9 +56,18 @@ impl TransferUseCase {
 
     let transaction = Transaction::new(req.idempotency_key, vec![debit, credit])?;
     match self.repository.save_transaction(&transaction).await {
-      Ok(tansaction_id) => Ok(tansaction_id),
-      Err(AppError::IdempotencyConflict(existing_id)) => Ok(existing_id),
-      Err(e) => Err(e),
+      Ok(tansaction_id) => {
+        info!("Transfer completed successfully");
+        Ok(tansaction_id)
+      }
+      Err(AppError::IdempotencyConflict(existing_id)) => {
+        info!("Transaction already processed, returning cached transaction ID");
+        Ok(existing_id)
+      }
+      Err(e) => {
+        error!(error = %e, "Failed to persist transfer transaction");
+        Err(e)
+      }
     }
   }
 }

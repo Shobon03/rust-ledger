@@ -19,6 +19,7 @@ use domain::{
 use rocksdb::{DB, Direction, IteratorMode, Options, WriteBatch};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -44,12 +45,18 @@ impl RocksDbLedgerRepo {
 
 #[async_trait::async_trait]
 impl LedgerRepository for RocksDbLedgerRepo {
+  #[instrument(skip(self))]
   async fn save_transaction(&self, transaction: &Transaction) -> Result<TransactionId, AppError> {
+    debug!(idempotency_key = %transaction.idempotency_key);
+
     let key = format!("id:{}", transaction.idempotency_key);
 
     if let Ok(Some(existing)) = self.db.get(&key) {
       let transaction_id_str = String::from_utf8(existing).unwrap();
       let transaction_id = TransactionId(Uuid::parse_str(&transaction_id_str).unwrap());
+
+      info!(transaction_id = %transaction_id, "Idempotency key found, will not save");
+
       return Ok(transaction_id);
     }
 
@@ -112,13 +119,18 @@ impl LedgerRepository for RocksDbLedgerRepo {
       .write(batch)
       .map_err(|e| AppError::Infrastructure(e.to_string()))?;
 
+    info!(transaction_id = %transaction.id, lines = transaction.lines.len(), "Transaction written successfully on RocksDB");
+
     Ok(transaction.id)
   }
 }
 
 #[async_trait::async_trait]
 impl BalanceQueryRepository for RocksDbLedgerRepo {
+  #[instrument(skip(self))]
   async fn get_balance(&self, account_id: &AccountId) -> Result<AccountBalance, AppError> {
+    debug!(account_id = %account_id);
+
     let balance_key = format!("bl:{}", account_id.0);
 
     let balance = match self.db.get(balance_key.as_bytes()) {
@@ -130,6 +142,8 @@ impl BalanceQueryRepository for RocksDbLedgerRepo {
       _ => 0_i64,
     };
 
+    info!(account_id = %account_id, balance = balance, "Balance retrieved from RocksDB");
+
     Ok(AccountBalance {
       account_id: *account_id,
       balance,
@@ -139,7 +153,10 @@ impl BalanceQueryRepository for RocksDbLedgerRepo {
 
 #[async_trait::async_trait]
 impl StatementQueryRepository for RocksDbLedgerRepo {
+  #[instrument(skip(self))]
   async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+    debug!(account_id = %account_id);
+
     let prefix = format!("id_tx:{}:", account_id.0);
 
     let iter = self
@@ -163,6 +180,8 @@ impl StatementQueryRepository for RocksDbLedgerRepo {
         transactions.push(transaction);
       }
     }
+
+    info!(account_id = %account_id, transactions_count = transactions.len(), "Statement retrieved from RocksDB");
 
     Ok(AccountStatement {
       account_id: *account_id,

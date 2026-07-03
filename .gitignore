@@ -1,5 +1,6 @@
 /target
 /db
+/logs
 PROBLEM_DEFINITION.md
 
 .env

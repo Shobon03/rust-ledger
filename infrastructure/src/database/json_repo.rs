@@ -18,6 +18,7 @@ use std::{
   io::{BufRead, BufReader, Write},
   sync::{Mutex, RwLock},
 };
+use tracing::{debug, info, instrument};
 
 pub struct JsonLedgerRepo {
   file_path: String,
@@ -59,7 +60,10 @@ impl JsonLedgerRepo {
 
 #[async_trait]
 impl LedgerRepository for JsonLedgerRepo {
+  #[instrument(skip(self))]
   async fn save_transaction(&self, transaction: &Transaction) -> Result<TransactionId, AppError> {
+    debug!(idempotency_key = %transaction.idempotency_key);
+
     let _guard = self.write_lock.lock().unwrap();
 
     if let Ok(file) = File::open(&self.file_path) {
@@ -99,15 +103,22 @@ impl LedgerRepository for JsonLedgerRepo {
       }
     }
 
+    info!(transaction_id = %transaction.id, lines = transaction.lines.len(), "Transaction written successfully on JSON DB");
+
     Ok(transaction.id)
   }
 }
 
 #[async_trait]
 impl BalanceQueryRepository for JsonLedgerRepo {
+  #[instrument(skip(self))]
   async fn get_balance(&self, account_id: &AccountId) -> Result<AccountBalance, AppError> {
+    debug!(account_id = %account_id);
+
     let _guard = self.balances.read().unwrap();
     let balance = _guard.get(account_id).copied().unwrap_or(0);
+
+    info!(account_id = %account_id, balance = balance, "Balance retrieved from JSON DB");
 
     Ok(AccountBalance {
       account_id: *account_id,
@@ -118,7 +129,10 @@ impl BalanceQueryRepository for JsonLedgerRepo {
 
 #[async_trait]
 impl StatementQueryRepository for JsonLedgerRepo {
+  #[instrument(skip(self))]
   async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+    debug!(account_id = %account_id);
+
     let _guard = self.write_lock.lock().unwrap();
 
     let mut transactions = Vec::new();
@@ -140,6 +154,8 @@ impl StatementQueryRepository for JsonLedgerRepo {
         }
       }
     }
+
+    info!(account_id = %account_id, transactions_count = transactions.len(), "Statement retrieved from JSON DB");
 
     Ok(AccountStatement {
       account_id: *account_id,
