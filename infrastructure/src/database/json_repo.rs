@@ -2,7 +2,10 @@ use crate::database::utils::check_and_create_dir;
 use application::{
   error::AppError,
   ports::repository::LedgerRepository,
-  queries::get_balance::{AccountBalance, BalanceQueryRepository},
+  queries::{
+    get_balance::{AccountBalance, BalanceQueryRepository},
+    get_statement::{AccountStatement, StatementQueryRepository},
+  },
 };
 use async_trait::async_trait;
 use domain::{
@@ -109,6 +112,38 @@ impl BalanceQueryRepository for JsonLedgerRepo {
     Ok(AccountBalance {
       account_id: *account_id,
       balance,
+    })
+  }
+}
+
+#[async_trait]
+impl StatementQueryRepository for JsonLedgerRepo {
+  async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+    let _guard = self.write_lock.lock().unwrap();
+
+    let mut transactions = Vec::new();
+
+    if let Ok(file) = File::open(&self.file_path) {
+      let reader = BufReader::new(file);
+
+      for line_result in reader.lines() {
+        if let Ok(line_str) = line_result {
+          if let Ok(transaction) = serde_json::from_str::<Transaction>(&line_str) {
+            if transaction
+              .lines
+              .iter()
+              .any(|line| line.account_id == *account_id)
+            {
+              transactions.push(transaction);
+            }
+          }
+        }
+      }
+    }
+
+    Ok(AccountStatement {
+      account_id: *account_id,
+      transactions,
     })
   }
 }

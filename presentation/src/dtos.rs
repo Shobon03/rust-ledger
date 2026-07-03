@@ -1,3 +1,4 @@
+use domain::entities::transaction::Transaction;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,4 +14,10 @@ pub struct TransferRequestDTO {
 pub struct BalanceResponseDTO {
   pub account_id: Uuid,
   pub balance: i64,
+}
+
+#[derive(Serialize)]
+pub struct StatementResponseDTO {
+  pub account_id: Uuid,
+  pub transactions: Vec<Transaction>,
 }

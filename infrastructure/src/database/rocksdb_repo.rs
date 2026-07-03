@@ -1,21 +1,30 @@
-use std::sync::Arc;
-
 use crate::database::utils::check_and_create_dir;
 use application::{
   error::AppError,
   ports::repository::LedgerRepository,
-  queries::get_balance::{AccountBalance, BalanceQueryRepository},
+  queries::{
+    get_balance::{AccountBalance, BalanceQueryRepository},
+    get_statement::{AccountStatement, StatementQueryRepository},
+  },
 };
+use dashmap::DashMap;
 use domain::{
   entities::{entry::EntryType, transaction::Transaction},
-  value_objects::{account::AccountId, transaction::TransactionId},
+  error::DomainError,
+  value_objects::{
+    account::{AccountId, TREASURY_ACCOUNT_ID},
+    transaction::TransactionId,
+  },
 };
-use rocksdb::{DB, Options, WriteBatch};
+use rocksdb::{DB, Direction, IteratorMode, Options, WriteBatch};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct RocksDbLedgerRepo {
   db: Arc<DB>,
+  locks: DashMap<Uuid, Arc<Mutex<()>>>,
 }
 
 impl RocksDbLedgerRepo {
@@ -26,7 +35,10 @@ impl RocksDbLedgerRepo {
     opts.create_if_missing(true);
 
     let db = DB::open(&opts, path).expect("Failed to open RocksDB");
-    Self { db: Arc::new(db) }
+    Self {
+      db: Arc::new(db),
+      locks: DashMap::new(),
+    }
   }
 }
 
@@ -39,6 +51,19 @@ impl LedgerRepository for RocksDbLedgerRepo {
       let transaction_id_str = String::from_utf8(existing).unwrap();
       let transaction_id = TransactionId(Uuid::parse_str(&transaction_id_str).unwrap());
       return Ok(transaction_id);
+    }
+
+    let mut account_ids: Vec<Uuid> = transaction.lines.iter().map(|l| l.account_id.0).collect();
+    account_ids.sort();
+
+    let mut _guards = Vec::new();
+    for id in account_ids {
+      let lock_arc = self
+        .locks
+        .entry(id)
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+      _guards.push(lock_arc.lock_owned().await);
     }
 
     let mut batch = WriteBatch::default();
@@ -67,7 +92,19 @@ impl LedgerRepository for RocksDbLedgerRepo {
         current_balance - account.amount as i64
       };
 
+      if new_balance < 0 && account.account_id.0 != TREASURY_ACCOUNT_ID {
+        return Err(AppError::Domain(DomainError::InsufficientFunds(
+          account.account_id,
+        )));
+      }
+
       batch.put(balance_key.as_bytes(), new_balance.to_be_bytes());
+
+      let idx_key = format!(
+        "id_tx:{}:{}:{}",
+        account.account_id.0, transaction.timestamp, transaction.id
+      );
+      batch.put(idx_key.as_bytes(), transaction.id.to_string().as_bytes());
     }
 
     self
@@ -96,6 +133,40 @@ impl BalanceQueryRepository for RocksDbLedgerRepo {
     Ok(AccountBalance {
       account_id: *account_id,
       balance,
+    })
+  }
+}
+
+#[async_trait::async_trait]
+impl StatementQueryRepository for RocksDbLedgerRepo {
+  async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+    let prefix = format!("id_tx:{}:", account_id.0);
+
+    let iter = self
+      .db
+      .iterator(IteratorMode::From(prefix.as_bytes(), Direction::Forward));
+
+    let mut transactions = Vec::new();
+    for item in iter {
+      let (key, value) = item.unwrap();
+      let key_str = String::from_utf8(key.to_vec()).unwrap();
+
+      if !key_str.starts_with(&prefix) {
+        break;
+      }
+
+      let tx_id_str = String::from_utf8(value.to_vec()).unwrap();
+      let tx_key = format!("tx:{}", tx_id_str);
+
+      if let Ok(Some(tx_bytes)) = self.db.get(tx_key.as_bytes()) {
+        let transaction: Transaction = serde_json::from_slice(&tx_bytes).unwrap();
+        transactions.push(transaction);
+      }
+    }
+
+    Ok(AccountStatement {
+      account_id: *account_id,
+      transactions,
     })
   }
 }
