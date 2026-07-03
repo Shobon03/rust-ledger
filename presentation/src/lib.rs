@@ -30,6 +30,7 @@ pub async fn run_server(
   use_case: Arc<TransferUseCase>,
   balance_query: Arc<GetBalanceQuery>,
   statement_query: Arc<GetStatementQuery>,
+  shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
 ) {
   let shared_state = Arc::new(AppState {
     use_case,
@@ -47,7 +48,11 @@ pub async fn run_server(
   let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
     .await
     .unwrap();
-  axum::serve(listener, app).await.unwrap();
+
+  axum::serve(listener, app)
+    .with_graceful_shutdown(shutdown_signal)
+    .await
+    .unwrap();
 }
 
 async fn handle_transfer(

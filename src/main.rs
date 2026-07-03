@@ -10,7 +10,8 @@ use dotenvy::dotenv;
 use infrastructure::database::{json_repo::JsonLedgerRepo, rocksdb_repo::RocksDbLedgerRepo};
 use presentation::run_server;
 use std::{env, sync::Arc};
-use tracing::info;
+use tokio::signal;
+use tracing::{info, warn};
 use tracing_subscriber::prelude::*;
 
 #[tokio::main]
@@ -56,5 +57,45 @@ async fn main() {
   let port = 3000;
 
   info!("Server running on port {}", port);
-  run_server(port, use_case, balance_query, statement_query).await;
+  run_server(
+    port,
+    use_case,
+    balance_query,
+    statement_query,
+    shutdown_signal(),
+  )
+  .await;
+
+  info!("Server stopped successfully");
+}
+
+async fn shutdown_signal() {
+  let ctrl_c = async {
+    signal::ctrl_c()
+      .await
+      .expect("Failed to listen to Ctrl+C signal")
+  };
+  let msg = String::from("Starting graceful shutdown...");
+
+  #[cfg(unix)]
+  let terminate = async {
+    use tokio::signal::unix::SignalKind;
+
+    signal::unix::signal(SignalKind::terminate())
+      .expect("Failed to listen to terminate signal")
+      .recv()
+      .await;
+  };
+
+  #[cfg(not(unix))]
+  let terminate = std::future::pending::<()>();
+
+  tokio::select! {
+    _ = ctrl_c => {
+      warn!("Received SIGINT (Ctrl+C). {}", msg);
+    },
+    _ = terminate => {
+      warn!("Received SIGTERM. {}", msg);
+    }
+  }
 }
