@@ -77,7 +77,7 @@ impl LedgerRepository for RocksDbLedgerRepo {
 
     let transaction_key = format!("tx:{}", transaction.id);
     let transaction_bytes = serde_json::to_vec(transaction).unwrap();
-    batch.put(transaction_key.as_bytes(), transaction_bytes);
+    batch.put(transaction_key.as_bytes(), &transaction_bytes);
 
     batch.put(&key.as_bytes(), transaction.id.to_string().as_bytes());
 
@@ -111,7 +111,7 @@ impl LedgerRepository for RocksDbLedgerRepo {
         "id_tx:{}:{}:{}",
         account.account_id.0, transaction.timestamp, transaction.id
       );
-      batch.put(idx_key.as_bytes(), transaction.id.to_string().as_bytes());
+      batch.put(idx_key.as_bytes(), &transaction_bytes);
     }
 
     self
@@ -154,8 +154,13 @@ impl BalanceQueryRepository for RocksDbLedgerRepo {
 #[async_trait::async_trait]
 impl StatementQueryRepository for RocksDbLedgerRepo {
   #[instrument(skip(self))]
-  async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
-    debug!(account_id = %account_id);
+  async fn get_statement(
+    &self,
+    account_id: &AccountId,
+    limit: usize,
+    offset: usize,
+  ) -> Result<AccountStatement, AppError> {
+    debug!(account_id = %account_id, limit = limit, offset = offset);
 
     let prefix = format!("id_tx:{}:", account_id.0);
 
@@ -164,6 +169,8 @@ impl StatementQueryRepository for RocksDbLedgerRepo {
       .iterator(IteratorMode::From(prefix.as_bytes(), Direction::Forward));
 
     let mut transactions = Vec::new();
+    let mut skipped = 0;
+
     for item in iter {
       let (key, value) = item.unwrap();
       let key_str = String::from_utf8(key.to_vec()).unwrap();
@@ -172,11 +179,16 @@ impl StatementQueryRepository for RocksDbLedgerRepo {
         break;
       }
 
-      let tx_id_str = String::from_utf8(value.to_vec()).unwrap();
-      let tx_key = format!("tx:{}", tx_id_str);
+      if skipped < offset {
+        skipped += 1;
+        continue;
+      }
 
-      if let Ok(Some(tx_bytes)) = self.db.get(tx_key.as_bytes()) {
-        let transaction: Transaction = serde_json::from_slice(&tx_bytes).unwrap();
+      if transactions.len() >= limit {
+        break;
+      }
+
+      if let Ok(transaction) = serde_json::from_slice::<Transaction>(&value) {
         transactions.push(transaction);
       }
     }

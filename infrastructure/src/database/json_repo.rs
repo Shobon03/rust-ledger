@@ -130,12 +130,18 @@ impl BalanceQueryRepository for JsonLedgerRepo {
 #[async_trait]
 impl StatementQueryRepository for JsonLedgerRepo {
   #[instrument(skip(self))]
-  async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
-    debug!(account_id = %account_id);
+  async fn get_statement(
+    &self,
+    account_id: &AccountId,
+    limit: usize,
+    offset: usize,
+  ) -> Result<AccountStatement, AppError> {
+    debug!(account_id = %account_id, limit = limit, offset = offset);
 
     let _guard = self.write_lock.lock().unwrap();
 
     let mut transactions = Vec::new();
+    let mut skipped = 0;
 
     if let Ok(file) = File::open(&self.file_path) {
       let reader = BufReader::new(file);
@@ -148,6 +154,15 @@ impl StatementQueryRepository for JsonLedgerRepo {
               .iter()
               .any(|line| line.account_id == *account_id)
             {
+              if skipped < offset {
+                skipped += 1;
+                continue;
+              }
+
+              if transactions.len() >= limit {
+                break;
+              }
+
               transactions.push(transaction);
             }
           }

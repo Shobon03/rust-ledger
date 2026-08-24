@@ -8,7 +8,7 @@ use application::{
 };
 use axum::{
   Json, Router,
-  extract::{Path, State},
+  extract::{Path, Query, State},
   http::StatusCode,
   response::IntoResponse,
   routing::{get, post},
@@ -83,11 +83,21 @@ async fn get_balance(
   Ok((StatusCode::OK, Json(response_dto)))
 }
 
+#[derive(serde::Deserialize)]
+struct StatementParams {
+  limit: Option<usize>,
+  offset: Option<usize>,
+}
+
 async fn get_statement(
   State(state): State<Arc<AppState>>,
   Path(account_id): Path<Uuid>,
+  Query(params): Query<StatementParams>,
 ) -> Result<impl IntoResponse, AppError> {
-  let account_statement = state.statement_query.execute(AccountId(account_id)).await?;
+  let account_statement = state
+    .statement_query
+    .execute(AccountId(account_id), params.limit, params.offset)
+    .await?;
   let response_dto = StatementResponseDTO {
     account_id: account_statement.account_id.0,
     transactions: account_statement.transactions,

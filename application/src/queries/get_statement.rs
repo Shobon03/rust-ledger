@@ -10,7 +10,12 @@ pub struct AccountStatement {
 
 #[async_trait::async_trait]
 pub trait StatementQueryRepository: Send + Sync {
-  async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError>;
+  async fn get_statement(
+    &self,
+    account_id: &AccountId,
+    limit: usize,
+    offset: usize,
+  ) -> Result<AccountStatement, AppError>;
 }
 
 pub struct GetStatementQuery {
@@ -24,11 +29,19 @@ impl GetStatementQuery {
 
   #[instrument(
     skip(self),
-    fields(account_id = %account_id)
+    fields(account_id = %account_id, limit = ?limit, offset = ?offset)
   )]
-  pub async fn execute(&self, account_id: AccountId) -> Result<AccountStatement, AppError> {
+  pub async fn execute(
+    &self,
+    account_id: AccountId,
+    limit: Option<usize>,
+    offset: Option<usize>,
+  ) -> Result<AccountStatement, AppError> {
+    let limit = limit.unwrap_or(20);
+    let offset = offset.unwrap_or(0);
+
     info!("Querying account statement");
-    match self.repository.get_statement(&account_id).await {
+    match self.repository.get_statement(&account_id, limit, offset).await {
       Ok(statement) => {
         info!(transactions_count = statement.transactions.len(), "Statement query succeeded");
         Ok(statement)
@@ -53,10 +66,22 @@ mod tests {
 
   #[async_trait::async_trait]
   impl StatementQueryRepository for MockStatementQueryRepo {
-    async fn get_statement(&self, account_id: &AccountId) -> Result<AccountStatement, AppError> {
+    async fn get_statement(
+      &self,
+      account_id: &AccountId,
+      limit: usize,
+      offset: usize,
+    ) -> Result<AccountStatement, AppError> {
+      let transactions = self.transactions
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
+
       Ok(AccountStatement {
         account_id: *account_id,
-        transactions: self.transactions.clone(),
+        transactions,
       })
     }
   }
@@ -84,7 +109,7 @@ mod tests {
     });
     let query = GetStatementQuery::new(repo);
 
-    let result = query.execute(account_id).await;
+    let result = query.execute(account_id, Some(10), Some(0)).await;
 
     assert!(result.is_ok());
     let statement = result.unwrap();

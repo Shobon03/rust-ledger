@@ -4,3 +4,6 @@
 PROBLEM_DEFINITION.md
 
 .env
+
+/http/k6/summary.txt
+/http/k6/summary.json
